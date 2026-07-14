@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -30,10 +31,12 @@ func main(){
 	u4:="https://youtube.com"
 	u5:="https://claude.ai"
 	u6:="https://chatgpt.com"
-	urls = append(urls, u1,u2,u3,u4,u5,u6)
+	u7:="https://httpstat.us/200?sleep=5000"
+	urls = append(urls, u1,u2,u3,u4,u5,u6,u7)
 	start:=time.Now()
 	jobs:=make(chan string, len(urls))
 	results:=make(chan Result, len(urls))
+	secs:=2
 	var wg sync.WaitGroup
 
 	for _,url:=range urls{
@@ -41,10 +44,10 @@ func main(){
 	}
 	close(jobs)
 
-	numWorkers:=3
+	numWorkers:=3 
 	wg.Add(numWorkers)
 	for i:=range numWorkers{
-		go worker(i,jobs,results,&wg)
+		go worker(i,jobs,results,&wg,secs)
 	} 
 
 	go func(){
@@ -61,26 +64,34 @@ func main(){
 
 }
 
-func worker(id int,jobs<-chan string, results chan<-Result, wg *sync.WaitGroup){
+func worker(id int,jobs<-chan string, results chan<-Result, wg *sync.WaitGroup,secs int){
 	defer wg.Done()
 	for url:=range jobs{
 		fmt.Println("worker",id,"processing",url)
-		results<-checkURL(url)
+		results<-checkURL(url,secs)
 	}
 }
 
 
-func checkURL(url string) Result{
-	start:=time.Now()
-	resp,err:=http.Get(url)
-	end:=time.Since(start)
+func checkURL(url string,secs int) Result{
+	ctx,cancel:=context.WithTimeout(context.Background(),time.Duration(secs)*time.Second)
+	defer cancel()
+	req,err:=http.NewRequestWithContext(ctx,"GET",url,nil)
 
 	var res Result;
 	res.URL=url
 	res.Err=err
-	res.Duration=end
 	if err!=nil{
-		log.Println("Network/DNS failure:",err)
+		log.Println("failed initiating:",err)
+		return res
+	}
+	start:=time.Now()
+	resp,err:=http.DefaultClient.Do(req)
+	end:=time.Since(start)
+	res.Duration=end
+
+	if err!=nil{
+		log.Printf("Execution aborted for %s: %v",url,err)
 		return res
 	}
 	defer resp.Body.Close()
