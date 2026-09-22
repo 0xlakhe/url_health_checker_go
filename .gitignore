@@ -1,0 +1,29 @@
+# Go
+urlchecker
+/urlchecker
+*.exe
+*.out
+*.test
+/bin/
+/dist/
+
+# Build cache / modules
+/vendor/
+
+# Test artifacts
+coverage.out
+coverage.html
+*.coverprofile
+
+# IDE / editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Env / local
+.env
+.env.local
+/tmp/

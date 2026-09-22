@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>URL Health Checker</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+  textarea { width: 100%; min-height: 120px; font-family: monospace; }
+  .row { display: flex; gap: 0.5rem; align-items: center; margin: 0.75rem 0; flex-wrap: wrap; }
+  button { padding: 0.5rem 1rem; cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  th, td { border: 1px solid #8884; padding: 0.4rem 0.6rem; text-align: left; font-size: 0.9rem; }
+  .up { color: green; font-weight: bold; }
+  .down { color: red; font-weight: bold; }
+  #status { margin-top: 0.5rem; min-height: 1.2em; }
+  .mono { font-family: monospace; word-break: break-all; }
+</style>
+</head>
+<body>
+  <h1>URL Health Checker</h1>
+  <p>Enter one URL per line, then hit Check.</p>
+
+  <textarea id="urls" placeholder="https://google.com&#10;https://github.com&#10;example.com"></textarea>
+
+  <div class="row">
+    <label>Timeout (s): <input id="timeout" type="number" value="5" min="1" max="30" style="width:4rem" /></label>
+    <button id="check">Check</button>
+    <span id="status"></span>
+  </div>
+
+  <table id="results" hidden>
+    <thead><tr><th>URL</th><th>Status</th><th>Code</th><th>Latency</th><th>Error</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+<script>
+const urlsEl = document.getElementById('urls');
+const timeoutEl = document.getElementById('timeout');
+const btn = document.getElementById('check');
+const statusEl = document.getElementById('status');
+const table = document.getElementById('results');
+const tbody = table.querySelector('tbody');
+
+btn.onclick = async () => {
+  const urls = urlsEl.value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!urls.length) { statusEl.textContent = 'Enter at least one URL.'; return; }
+  btn.disabled = true;
+  statusEl.textContent = 'Checking ' + urls.length + ' URL(s)...';
+  tbody.innerHTML = '';
+  table.hidden = true;
+  try {
+    const res = await fetch('/api/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls, timeout_secs: Number(timeoutEl.value) || 5 }),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    for (const r of data.results) {
+      const tr = document.createElement('tr');
+      const ok = r.ok;
+      tr.innerHTML =
+        '<td class="mono"></td>' +
+        '<td class="' + (ok ? 'up' : 'down') + '">' + (ok ? 'UP' : 'DOWN') + '</td>' +
+        '<td>' + (r.status_code || '-') + '</td>' +
+        '<td>' + r.duration_ms + ' ms</td>' +
+        '<td class="mono">' + (r.error || '') + '</td>';
+      tr.children[0].textContent = r.url;
+      tr.children[4].textContent = r.error || '';
+      tbody.appendChild(tr);
+    }
+    table.hidden = false;
+    statusEl.textContent = 'Done in ' + data.total_ms + ' ms.';
+  } catch (e) {
+    statusEl.textContent = 'Failed: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+</script>
+</body>
+</html>
