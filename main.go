@@ -20,7 +20,6 @@ var frontendFS embed.FS
 
 type CheckRequest struct {
 	URLs        []string `json:"urls"`
-	URL         string   `json:"url"`
 	TimeoutSecs int      `json:"timeout_secs"`
 }
 
@@ -47,8 +46,6 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", serveIndex)
 	mux.HandleFunc("POST /api/check", handleCheck)
-	mux.HandleFunc("GET /api/check", handleCheckSingle)
-
 	addr := ":" + port
 	fmt.Printf("URL health checker listening on http://localhost%s\n", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
@@ -68,18 +65,6 @@ func serveIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
-// GET /api/check?url=https://example.com&timeout=5 — convenience for a single URL.
-func handleCheckSingle(w http.ResponseWriter, r *http.Request) {
-	target := strings.TrimSpace(r.URL.Query().Get("url"))
-	if target == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing ?url= query param"})
-		return
-	}
-	timeout := parseTimeout(r.URL.Query().Get("timeout"), 5)
-	results := checkURLs([]string{target}, timeout)
-	writeJSON(w, http.StatusOK, CheckResponse{Results: results, TotalMs: totalMs(results)})
-}
-
 // POST /api/check {"urls": [...], "url": "...", "timeout_secs": 5}
 func handleCheck(w http.ResponseWriter, r *http.Request) {
 	var req CheckRequest
@@ -94,11 +79,6 @@ func handleCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	urls := req.URLs
-	if s := strings.TrimSpace(req.URL); s != "" {
-		urls = append(urls, s)
-	}
-	// Also accept newline/comma separated single string entries.
-	urls = splitEntries(urls)
 
 	if len(urls) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "provide urls: [...] or url: \"...\""})
@@ -183,8 +163,6 @@ func checkURL(rawURL string, secs int) CheckResult {
 		res.Error = err.Error()
 		return res
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
 
 	res.StatusCode = resp.StatusCode
 	res.OK = resp.StatusCode < 400
@@ -203,37 +181,6 @@ func normalizeURL(s string) string {
 		s = "https://" + s
 	}
 	return s
-}
-
-func splitEntries(in []string) []string {
-	var out []string
-	for _, s := range in {
-		for _, f := range strings.FieldsFunc(s, func(r rune) bool { return r == '\n' || r == ',' }) {
-			if t := strings.TrimSpace(f); t != "" {
-				out = append(out, t)
-			}
-		}
-	}
-	return out
-}
-
-func parseTimeout(s string, def int) int {
-	if s == "" {
-		return def
-	}
-	var v int
-	if _, err := fmt.Sscanf(s, "%d", &v); err != nil || v <= 0 {
-		return def
-	}
-	return min(v, 30)
-}
-
-func totalMs(rs []CheckResult) int64 {
-	var m int64
-	for _, r := range rs {
-		m += r.DurationMs
-	}
-	return m
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
